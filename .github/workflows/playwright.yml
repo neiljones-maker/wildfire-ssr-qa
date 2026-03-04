@@ -8,9 +8,6 @@ on:
   workflow_dispatch:
 
 env:
-  # Path where the extension build will be extracted in CI.
-  # The extension zip must be uploaded as a repository secret (EXTENSION_BUILD_URL)
-  # or provided as a workflow artifact from the main build pipeline.
   EXTENSION_PATH: ${{ github.workspace }}/extension-build
 
 jobs:
@@ -34,10 +31,13 @@ jobs:
       - name: Download extension build
         run: |
           mkdir -p ${{ env.EXTENSION_PATH }}
-          curl -L "${{ secrets.EXTENSION_BUILD_URL }}" -o extension.zip
-          unzip extension.zip -d ${{ env.EXTENSION_PATH }}
+          gh release download ${{ secrets.EXTENSION_TAG }} \
+            --repo ${{ secrets.EXTENSION_REPO }} \
+            --pattern "*.zip" \
+            --output /tmp/extension.zip
+          unzip /tmp/extension.zip -d ${{ env.EXTENSION_PATH }}
         env:
-          EXTENSION_BUILD_URL: ${{ secrets.EXTENSION_BUILD_URL }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: Run INF-291 tests
         run: PLAYWRIGHT_HTML_REPORT=INF-291/playwright-report npx playwright test INF-291/
@@ -72,10 +72,13 @@ jobs:
       - name: Download extension build
         run: |
           mkdir -p ${{ env.EXTENSION_PATH }}
-          curl -L "${{ secrets.EXTENSION_BUILD_URL }}" -o extension.zip
-          unzip extension.zip -d ${{ env.EXTENSION_PATH }}
+          gh release download ${{ secrets.EXTENSION_TAG }} \
+            --repo ${{ secrets.EXTENSION_REPO }} \
+            --pattern "*.zip" \
+            --output /tmp/extension.zip
+          unzip /tmp/extension.zip -d ${{ env.EXTENSION_PATH }}
         env:
-          EXTENSION_BUILD_URL: ${{ secrets.EXTENSION_BUILD_URL }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: Run INF-293 tests
         run: PLAYWRIGHT_HTML_REPORT=INF-293/playwright-report npx playwright test INF-293/
@@ -110,10 +113,13 @@ jobs:
       - name: Download extension build
         run: |
           mkdir -p ${{ env.EXTENSION_PATH }}
-          curl -L "${{ secrets.EXTENSION_BUILD_URL }}" -o extension.zip
-          unzip extension.zip -d ${{ env.EXTENSION_PATH }}
+          gh release download ${{ secrets.EXTENSION_TAG }} \
+            --repo ${{ secrets.EXTENSION_REPO }} \
+            --pattern "*.zip" \
+            --output /tmp/extension.zip
+          unzip /tmp/extension.zip -d ${{ env.EXTENSION_PATH }}
         env:
-          EXTENSION_BUILD_URL: ${{ secrets.EXTENSION_BUILD_URL }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
       - name: Run INF-280 tests
         run: PLAYWRIGHT_HTML_REPORT=INF-280/playwright-report npx playwright test INF-280/
