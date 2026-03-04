@@ -85,8 +85,15 @@ test.describe('INF-293: Belk Injection Point Fix', () => {
     await page.waitForTimeout(3000);
 
     const isInBody = await page.evaluate(() => {
+      // Use the opacity-transition discriminator to identify our extension host
+      // specifically — belk.com has its own native custom elements inside <body>
+      // that would otherwise produce a false positive.
       const bodyChildren = Array.from(document.body?.children ?? []);
-      return bodyChildren.some((el) => el.tagName.includes('-'));
+      return bodyChildren.some(
+        (el) =>
+          el.tagName.includes('-') &&
+          (el as HTMLElement).style.transition?.includes('opacity'),
+      );
     });
 
     expect(isInBody).toBe(false);
