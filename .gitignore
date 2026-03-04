@@ -14,3 +14,7 @@ INF-291/playwright-report/
 INF-293/playwright-report/
 INF-280/playwright-report/
 INF-*/test-results/
+
+# RC report folder
+RC/playwright-report/
+RC/test-results/
