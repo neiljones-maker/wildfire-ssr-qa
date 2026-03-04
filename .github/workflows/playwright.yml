@@ -30,14 +30,16 @@ jobs:
 
       - name: Download extension build
         run: |
-          mkdir -p ${{ env.EXTENSION_PATH }}
-          gh release download ${{ secrets.EXTENSION_TAG }} \
-            --repo ${{ secrets.EXTENSION_REPO }} \
+          mkdir -p "$EXTENSION_PATH"
+          gh release download "$EXTENSION_TAG" \
+            --repo "$EXTENSION_REPO" \
             --pattern "*.zip" \
             --output /tmp/extension.zip
-          unzip /tmp/extension.zip -d ${{ env.EXTENSION_PATH }}
+          unzip /tmp/extension.zip -d "$EXTENSION_PATH"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          EXTENSION_REPO: ${{ secrets.EXTENSION_REPO }}
+          EXTENSION_TAG: ${{ secrets.EXTENSION_TAG }}
 
       - name: Run INF-291 tests
         run: PLAYWRIGHT_HTML_REPORT=INF-291/playwright-report npx playwright test INF-291/
@@ -71,14 +73,16 @@ jobs:
 
       - name: Download extension build
         run: |
-          mkdir -p ${{ env.EXTENSION_PATH }}
-          gh release download ${{ secrets.EXTENSION_TAG }} \
-            --repo ${{ secrets.EXTENSION_REPO }} \
+          mkdir -p "$EXTENSION_PATH"
+          gh release download "$EXTENSION_TAG" \
+            --repo "$EXTENSION_REPO" \
             --pattern "*.zip" \
             --output /tmp/extension.zip
-          unzip /tmp/extension.zip -d ${{ env.EXTENSION_PATH }}
+          unzip /tmp/extension.zip -d "$EXTENSION_PATH"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          EXTENSION_REPO: ${{ secrets.EXTENSION_REPO }}
+          EXTENSION_TAG: ${{ secrets.EXTENSION_TAG }}
 
       - name: Run INF-293 tests
         run: PLAYWRIGHT_HTML_REPORT=INF-293/playwright-report npx playwright test INF-293/
@@ -112,14 +116,16 @@ jobs:
 
       - name: Download extension build
         run: |
-          mkdir -p ${{ env.EXTENSION_PATH }}
-          gh release download ${{ secrets.EXTENSION_TAG }} \
-            --repo ${{ secrets.EXTENSION_REPO }} \
+          mkdir -p "$EXTENSION_PATH"
+          gh release download "$EXTENSION_TAG" \
+            --repo "$EXTENSION_REPO" \
             --pattern "*.zip" \
             --output /tmp/extension.zip
-          unzip /tmp/extension.zip -d ${{ env.EXTENSION_PATH }}
+          unzip /tmp/extension.zip -d "$EXTENSION_PATH"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          EXTENSION_REPO: ${{ secrets.EXTENSION_REPO }}
+          EXTENSION_TAG: ${{ secrets.EXTENSION_TAG }}
 
       - name: Run INF-280 tests
         run: PLAYWRIGHT_HTML_REPORT=INF-280/playwright-report npx playwright test INF-280/
