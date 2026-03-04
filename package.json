@@ -1,0 +1,18 @@
+{
+  "name": "@wildfire/e2e-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:inf-291": "PLAYWRIGHT_HTML_REPORT=INF-291/playwright-report playwright test INF-291/",
+    "test:inf-293": "PLAYWRIGHT_HTML_REPORT=INF-293/playwright-report playwright test INF-293/",
+    "test:inf-280": "PLAYWRIGHT_HTML_REPORT=INF-280/playwright-report playwright test INF-280/",
+    "report:inf-291": "playwright show-report INF-291/playwright-report",
+    "report:inf-293": "playwright show-report INF-293/playwright-report",
+    "report:inf-280": "playwright show-report INF-280/playwright-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^18.0.0"
+  }
+}

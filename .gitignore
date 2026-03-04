@@ -1,0 +1,16 @@
+
+# Playwright
+node_modules/
+test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+package-lock.json
+*.swp
+
+# Per-INF report folders
+INF-291/playwright-report/
+INF-293/playwright-report/
+INF-280/playwright-report/
+INF-*/test-results/
