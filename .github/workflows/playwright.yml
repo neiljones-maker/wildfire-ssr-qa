@@ -33,9 +33,9 @@ jobs:
           mkdir -p "$EXTENSION_PATH"
           gh release download "$EXTENSION_TAG" \
             --repo "$EXTENSION_REPO" \
-            --pattern "*.zip" \
-            --output /tmp/extension.zip
-          unzip /tmp/extension.zip -d "$EXTENSION_PATH"
+            --pattern "*chrome-development*.zip" \
+            --dir /tmp/ext-download
+          unzip /tmp/ext-download/*.zip -d "$EXTENSION_PATH"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           EXTENSION_REPO: ${{ secrets.EXTENSION_REPO }}
@@ -76,9 +76,9 @@ jobs:
           mkdir -p "$EXTENSION_PATH"
           gh release download "$EXTENSION_TAG" \
             --repo "$EXTENSION_REPO" \
-            --pattern "*.zip" \
-            --output /tmp/extension.zip
-          unzip /tmp/extension.zip -d "$EXTENSION_PATH"
+            --pattern "*chrome-development*.zip" \
+            --dir /tmp/ext-download
+          unzip /tmp/ext-download/*.zip -d "$EXTENSION_PATH"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           EXTENSION_REPO: ${{ secrets.EXTENSION_REPO }}
@@ -119,9 +119,9 @@ jobs:
           mkdir -p "$EXTENSION_PATH"
           gh release download "$EXTENSION_TAG" \
             --repo "$EXTENSION_REPO" \
-            --pattern "*.zip" \
-            --output /tmp/extension.zip
-          unzip /tmp/extension.zip -d "$EXTENSION_PATH"
+            --pattern "*chrome-development*.zip" \
+            --dir /tmp/ext-download
+          unzip /tmp/ext-download/*.zip -d "$EXTENSION_PATH"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           EXTENSION_REPO: ${{ secrets.EXTENSION_REPO }}
