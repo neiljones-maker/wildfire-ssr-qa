@@ -15,6 +15,6 @@ INF-293/playwright-report/
 INF-280/playwright-report/
 INF-*/test-results/
 
-# RC report folder
-RC/playwright-report/
-RC/test-results/
+# RC report folders (one per RC version)
+RC.*/playwright-report/
+RC.*/test-results/

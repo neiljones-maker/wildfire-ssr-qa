@@ -20,9 +20,13 @@ on:
         type: boolean
         default: true
       run_rc:
-        description: 'RC — Install Flow: Onboarding Tab & Login CTA'
+        description: 'RC — Install Flow (specify rc_name below)'
         type: boolean
         default: true
+      rc_name:
+        description: 'RC folder to test (e.g. RC.ca86dc0). Leave blank for default.'
+        type: string
+        default: 'RC.ca86dc0'
       extension_tag:
         description: 'Release tag to test (leave blank for latest)'
         type: string
@@ -168,7 +172,9 @@ jobs:
           retention-days: 30
 
   test-rc:
-    name: RC — Install Flow
+    # To test a different RC: create RC.<hash>/ folder with rc.spec.ts,
+    # then dispatch with run_rc=true, rc_name=RC.<hash>, extension_tag=<tag>
+    name: ${{ inputs.rc_name || 'RC.ca86dc0' }} — Install Flow
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_rc }}
     timeout-minutes: 30
     runs-on: ubuntu-latest
@@ -199,17 +205,20 @@ jobs:
           EXTENSION_TAG: ${{ inputs.extension_tag }}
 
       - name: Run RC tests
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" npx playwright test RC/ --reporter=list,html
+        run: |
+          RC="${{ inputs.rc_name || 'RC.ca86dc0' }}"
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" \
+            npx playwright test "$RC/" --reporter=list,html
         env:
           EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
-          PLAYWRIGHT_HTML_REPORT: RC/playwright-report
+          PLAYWRIGHT_HTML_REPORT: ${{ inputs.rc_name || 'RC.ca86dc0' }}/playwright-report
 
       - name: Upload RC report
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: RC-playwright-report
-          path: RC/playwright-report/
+          path: ${{ inputs.rc_name || 'RC.ca86dc0' }}/playwright-report/
           retention-days: 30
 
   deploy-pages:
@@ -251,7 +260,9 @@ jobs:
       - name: Create index page
         run: |
           mkdir -p pages
-          cat > pages/index.html << 'EOF'
+          RC_NAME="${{ inputs.rc_name }}"
+          RC_NAME="${RC_NAME:-RC.ca86dc0}"
+          cat > pages/index.html << HTMLEOF
           <!DOCTYPE html>
           <html lang="en">
           <head>
@@ -276,11 +287,11 @@ jobs:
               <li><a href="INF-291/">INF-291 — Font Declaration Injection <span class="badge">E2E</span></a></li>
               <li><a href="INF-293/">INF-293 — Belk Injection Point Fix <span class="badge">E2E</span></a></li>
               <li><a href="INF-280/">INF-280 — onMessageExternal Listener <span class="badge">E2E</span></a></li>
-              <li><a href="RC/">RC — Install Flow: Onboarding Tab &amp; Login CTA <span class="badge">E2E</span></a></li>
+              <li><a href="RC/">${RC_NAME} — Install Flow: Onboarding Tab &amp; Login CTA <span class="badge">E2E</span></a></li>
             </ul>
           </body>
           </html>
-          EOF
+          HTMLEOF
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
