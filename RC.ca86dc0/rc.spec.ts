@@ -10,36 +10,76 @@ import { BrowserContext, Page } from '@playwright/test';
  * - The UI does not re-appear on subsequent visits (one-time flag)
  * - A login CTA is present on the install tab
  *
- * NOTE: The fixture creates a fresh user data directory on every run, so
- * chrome.runtime.onInstalled always fires with reason:'install'. The install
- * tab is typically already open by the time the first test runs (opened during
- * service worker initialisation), so we check existing pages first before
- * falling back to waitForEvent.
+ * TIMING NOTE: The fixture yields as soon as the service worker registers.
+ * The SW's onInstalled handler runs asynchronously after initialisation, so
+ * the install tab may not have opened yet — or may be mid-navigation with
+ * its URL still at about:blank — when the first test runs.
  *
- * NOTE: The shadow root is mode:'closed', so internal UI content is not
- * directly queryable by Playwright. Assertions use page.evaluate() and check
- * light-DOM affordances where possible.
+ * waitForInstallTab() is race-condition-free:
+ *   1. Attaches a 'page' listener BEFORE scanning existing pages (no gap)
+ *   2. For every page (new or existing), waits for URL to reach example.com
+ *
+ * SHADOW DOM NOTE: The host element uses mode:'closed'. All UI assertions
+ * run via page.evaluate() in the page's own JS context.
  */
 
-const INSTALL_URL_PATTERN = 'example.com';
+const INSTALL_URL = 'example.com';
 
 /**
- * Returns the install tab. Checks already-open pages first to avoid a race
- * where the tab opened before the listener was attached.
+ * Race-condition-free helper that returns the install tab.
+ *
+ * Sets up the new-page listener before checking existing pages so a tab
+ * that opens between the two steps is never missed. For every candidate
+ * page it waits for the URL to settle at example.com (handles the case
+ * where the page exists but is still navigating from about:blank).
  */
-async function waitForInstallTab(context: BrowserContext, timeout = 15_000): Promise<Page> {
-  const existing = context.pages().find((p) => p.url().includes(INSTALL_URL_PATTERN));
-  if (existing) return existing;
+async function waitForInstallTab(context: BrowserContext, timeout = 20_000): Promise<Page> {
+  return new Promise<Page>((resolve, reject) => {
+    let settled = false;
 
-  return context.waitForEvent('page', {
-    predicate: (p) => p.url().includes(INSTALL_URL_PATTERN),
-    timeout,
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        const urls = context.pages().map((p) => p.url()).join(', ');
+        reject(
+          new Error(
+            `Install tab (${INSTALL_URL}) did not open within ${timeout}ms.\n` +
+              `Pages open at timeout: [${urls}]`,
+          ),
+        );
+      }
+    }, timeout);
+
+    const tryPage = async (page: Page) => {
+      if (settled) return;
+      try {
+        if (!page.url().includes(INSTALL_URL)) {
+          await page.waitForURL(`**${INSTALL_URL}**`, { timeout: timeout - 1000 });
+        }
+        if (!settled && page.url().includes(INSTALL_URL)) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(page);
+        }
+      } catch {
+        // This page won't reach the install URL — ignore it
+      }
+    };
+
+    // 1. Set up listener for pages that open in the future (before scanning)
+    context.on('page', tryPage);
+
+    // 2. Check pages that are already open
+    for (const page of context.pages()) {
+      tryPage(page);
+    }
   });
 }
 
 /**
- * Returns true once the extension host element (identified by its unique
- * inline opacity transition) appears on the given page.
+ * Waits for the extension host element on the given page.
+ * Discriminator: hyphenated tag name + inline opacity transition,
+ * which is unique to our injectNotification() host element.
  */
 async function waitForOnboardingHost(page: Page, timeout = 10_000): Promise<boolean> {
   try {
@@ -61,22 +101,20 @@ async function waitForOnboardingHost(page: Page, timeout = 10_000): Promise<bool
 test.describe('RC: Install Flow — Onboarding Tab & Login CTA', () => {
   test('RC-1: install tab opens automatically after extension install', async ({ extensionContext }) => {
     const installTab = await waitForInstallTab(extensionContext);
-    expect(installTab).toBeTruthy();
+    expect(installTab.url()).toContain(INSTALL_URL);
     await installTab.close();
   });
 
   test('RC-2: install tab URL is the configured installation URL', async ({ extensionContext }) => {
     const installTab = await waitForInstallTab(extensionContext);
     await installTab.waitForLoadState('domcontentloaded');
-
-    expect(installTab.url()).toContain(INSTALL_URL_PATTERN);
+    expect(installTab.url()).toContain(INSTALL_URL);
     await installTab.close();
   });
 
   test('RC-3: extension injects onboarding UI into the install tab', async ({ extensionContext }) => {
     const installTab = await waitForInstallTab(extensionContext);
     await installTab.waitForLoadState('domcontentloaded');
-
     const hostPresent = await waitForOnboardingHost(installTab);
     expect(hostPresent).toBe(true);
     await installTab.close();
@@ -86,11 +124,9 @@ test.describe('RC: Install Flow — Onboarding Tab & Login CTA', () => {
     const installTab = await waitForInstallTab(extensionContext);
     await installTab.waitForLoadState('domcontentloaded');
 
-    // Confirm it appeared first
     const hostOnFirstLoad = await waitForOnboardingHost(installTab);
     expect(hostOnFirstLoad).toBe(true);
 
-    // Reload and wait — the one-time flag should suppress re-injection
     await installTab.reload({ waitUntil: 'domcontentloaded' });
     await installTab.waitForTimeout(3000);
 
@@ -111,18 +147,15 @@ test.describe('RC: Install Flow — Onboarding Tab & Login CTA', () => {
     await installTab.waitForLoadState('domcontentloaded');
     await waitForOnboardingHost(installTab);
 
-    // Search light-DOM links and buttons for login-related text or href.
-    // If the CTA lives inside the closed shadow root it won't be reachable
-    // here — in that case update this assertion once the implementation is known.
     const hasLoginCTA = await installTab.evaluate(() => {
-      const loginTerms = ['log in', 'login', 'sign in', 'signin'];
-      const elements = Array.from(
+      const terms = ['log in', 'login', 'sign in', 'signin'];
+      const els = Array.from(
         document.querySelectorAll<HTMLElement>('a, button, [role="button"]'),
       );
-      return elements.some((el) => {
+      return els.some((el) => {
         const text = (el.textContent ?? '').toLowerCase();
         const href = ((el as HTMLAnchorElement).href ?? '').toLowerCase();
-        return loginTerms.some((term) => text.includes(term) || href.includes(term));
+        return terms.some((t) => text.includes(t) || href.includes(t));
       });
     });
 

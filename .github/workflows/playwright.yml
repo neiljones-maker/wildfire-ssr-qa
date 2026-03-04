@@ -73,12 +73,14 @@ jobs:
           EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
           PLAYWRIGHT_HTML_REPORT: INF-291/playwright-report
 
-      - name: Upload INF-291 report
+      - name: Upload INF-291 report and test results
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: INF-291-playwright-report
-          path: INF-291/playwright-report/
+          path: |
+            INF-291/playwright-report/
+            test-results/
           retention-days: 30
 
   test-inf-293:
@@ -118,12 +120,14 @@ jobs:
           EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
           PLAYWRIGHT_HTML_REPORT: INF-293/playwright-report
 
-      - name: Upload INF-293 report
+      - name: Upload INF-293 report and test results
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: INF-293-playwright-report
-          path: INF-293/playwright-report/
+          path: |
+            INF-293/playwright-report/
+            test-results/
           retention-days: 30
 
   test-inf-280:
@@ -163,12 +167,14 @@ jobs:
           EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
           PLAYWRIGHT_HTML_REPORT: INF-280/playwright-report
 
-      - name: Upload INF-280 report
+      - name: Upload INF-280 report and test results
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: INF-280-playwright-report
-          path: INF-280/playwright-report/
+          path: |
+            INF-280/playwright-report/
+            test-results/
           retention-days: 30
 
   test-rc:
@@ -213,12 +219,14 @@ jobs:
           EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
           PLAYWRIGHT_HTML_REPORT: ${{ inputs.rc_name || 'RC.ca86dc0' }}/playwright-report
 
-      - name: Upload RC report
+      - name: Upload RC report and test results
         uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
           name: RC-playwright-report
-          path: ${{ inputs.rc_name || 'RC.ca86dc0' }}/playwright-report/
+          path: |
+            ${{ inputs.rc_name || 'RC.ca86dc0' }}/playwright-report/
+            test-results/
           retention-days: 30
 
   deploy-pages:
