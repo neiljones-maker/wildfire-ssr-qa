@@ -142,3 +142,72 @@ jobs:
           name: INF-280-playwright-report
           path: INF-280/playwright-report/
           retention-days: 30
+
+  deploy-pages:
+    name: Publish Reports to GitHub Pages
+    needs: [test-inf-291, test-inf-293, test-inf-280]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download INF-291 report
+        uses: actions/download-artifact@v4
+        with:
+          name: INF-291-playwright-report
+          path: pages/INF-291
+        continue-on-error: true
+
+      - name: Download INF-293 report
+        uses: actions/download-artifact@v4
+        with:
+          name: INF-293-playwright-report
+          path: pages/INF-293
+        continue-on-error: true
+
+      - name: Download INF-280 report
+        uses: actions/download-artifact@v4
+        with:
+          name: INF-280-playwright-report
+          path: pages/INF-280
+        continue-on-error: true
+
+      - name: Create index page
+        run: |
+          mkdir -p pages
+          cat > pages/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Wildfire SSR QA — Playwright Reports</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 640px; margin: 60px auto; padding: 0 24px; color: #24292f; }
+              h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 8px; }
+              p { color: #57606a; margin-bottom: 32px; font-size: 0.9rem; }
+              ul { list-style: none; padding: 0; margin: 0; }
+              li { margin-bottom: 12px; }
+              a { display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px; text-decoration: none; color: #0969da; font-weight: 500; font-size: 0.95rem; transition: background 0.15s; }
+              a:hover { background: #ddf4ff; border-color: #0969da; }
+              .badge { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 12px; background: #dafbe1; color: #116329; margin-left: auto; }
+            </style>
+          </head>
+          <body>
+            <h1>Wildfire SSR QA — Playwright Reports</h1>
+            <p>Latest test results per ticket. Reports update on every CI run.</p>
+            <ul>
+              <li><a href="INF-291/">INF-291 — Font Declaration Injection <span class="badge">E2E</span></a></li>
+              <li><a href="INF-293/">INF-293 — Belk Injection Point Fix <span class="badge">E2E</span></a></li>
+              <li><a href="INF-280/">INF-280 — onMessageExternal Listener <span class="badge">E2E</span></a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./pages
+          keep_files: false
