@@ -18,8 +18,8 @@ export default defineConfig({
     ['html', { outputFolder: process.env.PLAYWRIGHT_HTML_REPORT ?? 'playwright-report', open: 'always' }],
   ],
   use: {
-    trace: 'retain-on-failure',   // retries:0 means on-first-retry never fires
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    trace: 'on',
+    screenshot: 'on',
+    video: 'on',
   },
 });

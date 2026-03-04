@@ -1,10 +1,6 @@
 name: Playwright E2E Tests
 
 on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
     inputs:
       run_inf_291:
