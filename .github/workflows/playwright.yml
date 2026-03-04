@@ -1,27 +1,128 @@
-name: Playwright Tests
+name: Playwright E2E Tests
+
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
+
+env:
+  # Path where the extension build will be extracted in CI.
+  # The extension zip must be uploaded as a repository secret (EXTENSION_BUILD_URL)
+  # or provided as a workflow artifact from the main build pipeline.
+  EXTENSION_PATH: ${{ github.workspace }}/extension-build
+
 jobs:
-  test:
-    timeout-minutes: 60
+  test-inf-291:
+    name: INF-291 — Font Declaration Injection
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-node@v4
-      with:
-        node-version: lts/*
-    - name: Install dependencies
-      run: npm ci
-    - name: Install Playwright Browsers
-      run: npx playwright install --with-deps
-    - name: Run Playwright tests
-      run: npx playwright test
-    - uses: actions/upload-artifact@v4
-      if: ${{ !cancelled() }}
-      with:
-        name: playwright-report
-        path: playwright-report/
-        retention-days: 30
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Download extension build
+        run: |
+          mkdir -p ${{ env.EXTENSION_PATH }}
+          curl -L "${{ secrets.EXTENSION_BUILD_URL }}" -o extension.zip
+          unzip extension.zip -d ${{ env.EXTENSION_PATH }}
+        env:
+          EXTENSION_BUILD_URL: ${{ secrets.EXTENSION_BUILD_URL }}
+
+      - name: Run INF-291 tests
+        run: PLAYWRIGHT_HTML_REPORT=INF-291/playwright-report npx playwright test INF-291/
+        env:
+          EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
+
+      - name: Upload INF-291 report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: INF-291-playwright-report
+          path: INF-291/playwright-report/
+          retention-days: 30
+
+  test-inf-293:
+    name: INF-293 — Belk Injection Point Fix
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Download extension build
+        run: |
+          mkdir -p ${{ env.EXTENSION_PATH }}
+          curl -L "${{ secrets.EXTENSION_BUILD_URL }}" -o extension.zip
+          unzip extension.zip -d ${{ env.EXTENSION_PATH }}
+        env:
+          EXTENSION_BUILD_URL: ${{ secrets.EXTENSION_BUILD_URL }}
+
+      - name: Run INF-293 tests
+        run: PLAYWRIGHT_HTML_REPORT=INF-293/playwright-report npx playwright test INF-293/
+        env:
+          EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
+
+      - name: Upload INF-293 report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: INF-293-playwright-report
+          path: INF-293/playwright-report/
+          retention-days: 30
+
+  test-inf-280:
+    name: INF-280 — onMessageExternal Listener
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Download extension build
+        run: |
+          mkdir -p ${{ env.EXTENSION_PATH }}
+          curl -L "${{ secrets.EXTENSION_BUILD_URL }}" -o extension.zip
+          unzip extension.zip -d ${{ env.EXTENSION_PATH }}
+        env:
+          EXTENSION_BUILD_URL: ${{ secrets.EXTENSION_BUILD_URL }}
+
+      - name: Run INF-280 tests
+        run: PLAYWRIGHT_HTML_REPORT=INF-280/playwright-report npx playwright test INF-280/
+        env:
+          EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
+
+      - name: Upload INF-280 report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: INF-280-playwright-report
+          path: INF-280/playwright-report/
+          retention-days: 30

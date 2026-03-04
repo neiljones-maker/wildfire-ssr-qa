@@ -5,7 +5,11 @@ import fs from 'fs';
 
 export { expect } from '@playwright/test';
 
-const EXTENSION_PATH = path.resolve(__dirname, '../../packages/partner/chrome-extension-build');
+// Allow CI to override the extension path via env var.
+// Locally defaults to the monorepo build output.
+const EXTENSION_PATH =
+  process.env.EXTENSION_PATH ??
+  path.resolve(__dirname, '../../packages/partner/chrome-extension-build');
 
 /**
  * Polls until the extension's service worker appears in the context.
