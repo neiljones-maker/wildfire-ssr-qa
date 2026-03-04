@@ -60,6 +60,11 @@ export const test = base.extend<Record<string, never>, { extensionContext: Brows
 
       await waitForExtensionServiceWorker(context);
 
+      // Brief grace period so the SW's onInstalled handler (which calls
+      // browser.tabs.create) has time to open the install tab and for
+      // Playwright's CDP target-tracking to surface it via context.pages().
+      await new Promise((r) => setTimeout(r, 1500));
+
       await use(context);
       await context.close();
 

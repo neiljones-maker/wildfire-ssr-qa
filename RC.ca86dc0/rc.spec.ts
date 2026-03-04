@@ -15,9 +15,12 @@ import { BrowserContext, Page } from '@playwright/test';
  * the install tab may not have opened yet — or may be mid-navigation with
  * its URL still at about:blank — when the first test runs.
  *
- * waitForInstallTab() is race-condition-free:
- *   1. Attaches a 'page' listener BEFORE scanning existing pages (no gap)
- *   2. For every page (new or existing), waits for URL to reach example.com
+ * waitForInstallTab() uses two strategies:
+ *   1. Standard Playwright page tracking via context.on('page') and context.pages()
+ *   2. CDP Target.getTargets fallback for tabs created before Playwright's CDP
+ *      listener was ready (extension-opened tabs can race with CDP attachment
+ *      in launchPersistentContext). When found via CDP, the blank page is
+ *      navigated to the install URL so Playwright can interact with it.
  *
  * SHADOW DOM NOTE: The host element uses mode:'closed'. All UI assertions
  * run via page.evaluate() in the page's own JS context.
@@ -28,25 +31,74 @@ const INSTALL_URL = 'example.com';
 /**
  * Race-condition-free helper that returns the install tab.
  *
- * Sets up the new-page listener before checking existing pages so a tab
- * that opens between the two steps is never missed. For every candidate
- * page it waits for the URL to settle at example.com (handles the case
- * where the page exists but is still navigating from about:blank).
+ * Strategy 1: Standard Playwright page tracking.
+ *   Attaches a 'page' listener BEFORE scanning existing pages (no gap).
+ *   For every candidate page it waits for the URL to settle at example.com.
+ *
+ * Strategy 2: CDP Target discovery fallback.
+ *   Extension-created tabs can open before Playwright's CDP auto-attach
+ *   subscription is set up, causing them to be invisible to context.pages().
+ *   After a short initial wait, we query CDP Target.getTargets to find the
+ *   tab, then navigate the existing blank page there.
  */
 async function waitForInstallTab(context: BrowserContext, timeout = 20_000): Promise<Page> {
   return new Promise<Page>((resolve, reject) => {
     let settled = false;
 
-    const timer = setTimeout(() => {
+    const settle = (page: Page) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(page);
+    };
+
+    const timer = setTimeout(async () => {
+      if (settled) return;
+
+      // CDP fallback: enumerate all Chrome page targets. Extension-opened tabs
+      // that Playwright missed will show up here even if not in context.pages().
+      const anchorPage = context.pages()[0];
+      if (!anchorPage) {
+        settled = true;
+        const urls = context.pages().map((p) => p.url()).join(', ');
+        reject(new Error(
+          `Install tab (${INSTALL_URL}) did not open within ${timeout}ms.\n` +
+            `Pages open at timeout: [${urls}]`,
+        ));
+        return;
+      }
+
+      try {
+        const cdp = await context.newCDPSession(anchorPage);
+        const { targetInfos } = await cdp.send('Target.getTargets', {});
+        await cdp.detach();
+
+        const installTarget = targetInfos.find(
+          (t: { type: string; url: string }) =>
+            t.type === 'page' && t.url.includes(INSTALL_URL),
+        );
+
+        if (installTarget) {
+          // The tab exists in Chrome but Playwright didn't track it.
+          // Navigate the blank page there so Playwright can interact with it.
+          await anchorPage.goto((installTarget as { url: string }).url, {
+            waitUntil: 'domcontentloaded',
+            timeout: 10_000,
+          });
+          settle(anchorPage);
+          return;
+        }
+      } catch {
+        // CDP fallback failed; fall through to rejection
+      }
+
       if (!settled) {
         settled = true;
         const urls = context.pages().map((p) => p.url()).join(', ');
-        reject(
-          new Error(
-            `Install tab (${INSTALL_URL}) did not open within ${timeout}ms.\n` +
-              `Pages open at timeout: [${urls}]`,
-          ),
-        );
+        reject(new Error(
+          `Install tab (${INSTALL_URL}) did not open within ${timeout}ms.\n` +
+            `Pages open at timeout: [${urls}]`,
+        ));
       }
     }, timeout);
 
@@ -57,9 +109,7 @@ async function waitForInstallTab(context: BrowserContext, timeout = 20_000): Pro
           await page.waitForURL(`**${INSTALL_URL}**`, { timeout: timeout - 1000 });
         }
         if (!settled && page.url().includes(INSTALL_URL)) {
-          settled = true;
-          clearTimeout(timer);
-          resolve(page);
+          settle(page);
         }
       } catch {
         // This page won't reach the install URL — ignore it
