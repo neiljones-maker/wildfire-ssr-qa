@@ -6,6 +6,19 @@ on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      run_inf_291:
+        description: 'INF-291 — Font Declaration Injection'
+        type: boolean
+        default: true
+      run_inf_293:
+        description: 'INF-293 — Belk Injection Point Fix'
+        type: boolean
+        default: true
+      run_inf_280:
+        description: 'INF-280 — onMessageExternal Listener'
+        type: boolean
+        default: true
 
 env:
   EXTENSION_PATH: ${{ github.workspace }}/extension-build
@@ -13,6 +26,7 @@ env:
 jobs:
   test-inf-291:
     name: INF-291 — Font Declaration Injection
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_inf_291 }}
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
@@ -57,6 +71,7 @@ jobs:
 
   test-inf-293:
     name: INF-293 — Belk Injection Point Fix
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_inf_293 }}
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
@@ -101,6 +116,7 @@ jobs:
 
   test-inf-280:
     name: INF-280 — onMessageExternal Listener
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_inf_280 }}
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
