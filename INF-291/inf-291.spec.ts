@@ -42,10 +42,14 @@ test.describe('INF-291: Font Declaration Injection', () => {
     );
 
     const hasInlineFontStyle = await page.evaluate(() => {
-      // shadowRoot === null identifies our extension's closed shadow root,
-      // filtering out any native custom elements macys.com might have
+      // Our extension host is the only element that has a closed shadow root
+      // AND an opacity transition set inline — this combination is unique to
+      // injectNotification() and filters out macys.com's own custom elements
       const hostEl = Array.from(document.documentElement.children).find(
-        (el) => el.tagName.includes('-') && el.shadowRoot === null,
+        (el) =>
+          el.tagName.includes('-') &&
+          el.shadowRoot === null &&
+          (el as HTMLElement).style.transition?.includes('opacity'),
       );
       if (!hostEl) return false;
       const styleChildren = Array.from(hostEl.children).filter(
