@@ -42,9 +42,10 @@ jobs:
           EXTENSION_TAG: ${{ secrets.EXTENSION_TAG }}
 
       - name: Run INF-291 tests
-        run: PLAYWRIGHT_HTML_REPORT=INF-291/playwright-report npx playwright test INF-291/
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" npx playwright test INF-291/ --reporter=list,html
         env:
           EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
+          PLAYWRIGHT_HTML_REPORT: INF-291/playwright-report
 
       - name: Upload INF-291 report
         uses: actions/upload-artifact@v4
@@ -85,9 +86,10 @@ jobs:
           EXTENSION_TAG: ${{ secrets.EXTENSION_TAG }}
 
       - name: Run INF-293 tests
-        run: PLAYWRIGHT_HTML_REPORT=INF-293/playwright-report npx playwright test INF-293/
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" npx playwright test INF-293/ --reporter=list,html
         env:
           EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
+          PLAYWRIGHT_HTML_REPORT: INF-293/playwright-report
 
       - name: Upload INF-293 report
         uses: actions/upload-artifact@v4
@@ -128,9 +130,10 @@ jobs:
           EXTENSION_TAG: ${{ secrets.EXTENSION_TAG }}
 
       - name: Run INF-280 tests
-        run: PLAYWRIGHT_HTML_REPORT=INF-280/playwright-report npx playwright test INF-280/
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" npx playwright test INF-280/ --reporter=list,html
         env:
           EXTENSION_PATH: ${{ env.EXTENSION_PATH }}
+          PLAYWRIGHT_HTML_REPORT: INF-280/playwright-report
 
       - name: Upload INF-280 report
         uses: actions/upload-artifact@v4
