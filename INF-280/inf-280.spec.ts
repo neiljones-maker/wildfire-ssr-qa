@@ -18,8 +18,10 @@ import path from 'path';
  * Tests that require a real external message are marked test.skip with instructions to enable.
  */
 
-const EXTENSION_PATH = path.resolve(__dirname, '../../../packages/partner/chrome-extension-build');
-const MANIFEST_PATH = path.join(EXTENSION_PATH, 'manifest.json');
+const MANIFEST_PATH = path.join(
+  process.env.EXTENSION_PATH ?? path.resolve(__dirname, '../../../packages/partner/chrome-extension-build'),
+  'manifest.json',
+);
 
 const TEST_URL = 'https://www.macys.com';
 

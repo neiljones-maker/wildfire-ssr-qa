@@ -42,8 +42,10 @@ test.describe('INF-291: Font Declaration Injection', () => {
     );
 
     const hasInlineFontStyle = await page.evaluate(() => {
-      const hostEl = Array.from(document.documentElement.children).find((el) =>
-        el.tagName.includes('-'),
+      // shadowRoot === null identifies our extension's closed shadow root,
+      // filtering out any native custom elements macys.com might have
+      const hostEl = Array.from(document.documentElement.children).find(
+        (el) => el.tagName.includes('-') && el.shadowRoot === null,
       );
       if (!hostEl) return false;
       const styleChildren = Array.from(hostEl.children).filter(
