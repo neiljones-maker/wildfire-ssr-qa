@@ -33,8 +33,8 @@ async function waitForExtensionServiceWorker(
 }
 
 /**
- * Worker-scoped fixture: one Chrome instance per spec file, torn down after all
- * tests in that file complete.
+ * Test-scoped fixture: one fresh Chrome instance per test.
+ * This ensures onInstalled fires for every test (simulating a real install).
  *
  * IMPORTANT: Do NOT use channel:'chrome' (system Chrome). macOS security
  * restrictions cause system Chrome to silently ignore --load-extension.
@@ -44,32 +44,29 @@ async function waitForExtensionServiceWorker(
  * An explicit temp userDataDir is used instead of '' because the empty-string
  * shorthand behaves inconsistently across Playwright versions.
  */
-export const test = base.extend<Record<string, never>, { extensionContext: BrowserContext }>({
-  extensionContext: [
-    async ({}, use) => {
-      const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
+export const test = base.extend<{ extensionContext: BrowserContext }>({
+  extensionContext: async ({}, use) => {
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pw-ext-'));
 
-      const context = await chromium.launchPersistentContext(userDataDir, {
-        headless: false,
-        args: [
-          `--disable-extensions-except=${EXTENSION_PATH}`,
-          `--load-extension=${EXTENSION_PATH}`,
-          '--no-sandbox',
-        ],
-      });
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      headless: false,
+      args: [
+        `--disable-extensions-except=${EXTENSION_PATH}`,
+        `--load-extension=${EXTENSION_PATH}`,
+        '--no-sandbox',
+      ],
+    });
 
-      await waitForExtensionServiceWorker(context);
+    await waitForExtensionServiceWorker(context);
 
-      // Brief grace period so the SW's onInstalled handler (which calls
-      // browser.tabs.create) has time to open the install tab and for
-      // Playwright's CDP target-tracking to surface it via context.pages().
-      await new Promise((r) => setTimeout(r, 1500));
+    // Brief grace period so the SW's onInstalled handler (which calls
+    // browser.tabs.create) has time to open the install tab and for
+    // Playwright's CDP target-tracking to surface it via context.pages().
+    await new Promise((r) => setTimeout(r, 1500));
 
-      await use(context);
-      await context.close();
+    await use(context);
+    await context.close();
 
-      fs.rmSync(userDataDir, { recursive: true, force: true });
-    },
-    { scope: 'worker' },
-  ],
+    fs.rmSync(userDataDir, { recursive: true, force: true });
+  },
 });

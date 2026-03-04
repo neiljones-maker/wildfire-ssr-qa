@@ -1,19 +1,21 @@
 import { test, expect } from '../fixtures';
+import type { BrowserContext, Page } from '@playwright/test';
 
 /**
  * RC — Install Flow: Onboarding Tab & Login CTA
  *
  * Two checks:
- *   1. The install tab URL is the configured installation URL (example.com)
- *   2. The install tab shows a one-time onboarding UI with a login CTA
+ *   1. After install the extension opens a tab at the configured installation URL
+ *   2. That tab shows a one-time onboarding UI with a login CTA
  *
  * HOW IT WORKS
- * - The background config's onExtensionInstalled trigger sets
- *   `extensionNewInstall: true` in chrome.storage.local on install.
- * - The content script reads this flag on page load: if truthy it renders the
- *   onboarding UI (including the login CTA) inside a closed shadow-DOM host,
+ * - The background config's onExtensionInstalled trigger calls browser.tabs.create
+ *   with the configured installation URL (example.com/install).
+ * - The content script reads extensionNewInstall from chrome.storage.local on page
+ *   load: if truthy it renders the onboarding UI inside a closed shadow-DOM host,
  *   then removes the flag so the UI only appears once.
- * - beforeEach resets the flag to true so each test sees a fresh install state.
+ * - Each test gets a fresh Chrome install (test-scoped fixture) so onInstalled
+ *   fires naturally and the install tab opens automatically.
  *
  * SHADOW DOM NOTE
  * - The host element uses mode:'closed', so document.querySelectorAll and
@@ -23,31 +25,39 @@ import { test, expect } from '../fixtures';
  *   DSL renders the onboarding template (including the login CTA).
  */
 
-const INSTALL_URL = 'https://example.com/install';
+const INSTALL_URL = 'example.com';
+const INSTALL_TAB_TIMEOUT = 20_000;
 
-// Reset the one-time install flag before every test so each test sees fresh
-// install state regardless of what the previous test did.
-test.beforeEach(async ({ extensionContext }) => {
-  const sw = extensionContext.serviceWorkers()[0];
-  if (sw) {
-    await sw.evaluate(() =>
-      new Promise<void>((resolve) =>
-        chrome.storage.local.set({ extensionNewInstall: true }, () => resolve()),
-      ),
-    );
+/**
+ * Polls context.pages() until a page whose URL contains INSTALL_URL appears.
+ * The extension's onInstalled handler opens this tab — we never navigate manually.
+ */
+async function waitForInstallTab(context: BrowserContext): Promise<Page> {
+  const deadline = Date.now() + INSTALL_TAB_TIMEOUT;
+  while (Date.now() < deadline) {
+    const installPage = context.pages().find((p) => p.url().includes(INSTALL_URL));
+    if (installPage) return installPage;
+    await new Promise((r) => setTimeout(r, 500));
   }
-});
+  const urls = context.pages().map((p) => p.url()).join(', ');
+  throw new Error(
+    `Install tab (${INSTALL_URL}) did not open within ${INSTALL_TAB_TIMEOUT}ms.\n` +
+      `Pages open at timeout: [${urls}]`,
+  );
+}
 
 test.describe('RC: Install Flow — Onboarding Tab & Login CTA', () => {
-  test('RC-1: install tab shows the configured installation URL', async ({ extensionContext }) => {
-    const page = extensionContext.pages()[0];
-    await page.goto(INSTALL_URL, { waitUntil: 'domcontentloaded' });
-    expect(page.url()).toContain('example.com');
+  test('RC-1: extension opens the install tab automatically after install', async ({
+    extensionContext,
+  }) => {
+    const page = await waitForInstallTab(extensionContext);
+    expect(page.url()).toContain(INSTALL_URL);
   });
 
-  test('RC-2: install tab shows one-time onboarding UI with login CTA', async ({ extensionContext }) => {
-    const page = extensionContext.pages()[0];
-    await page.goto(INSTALL_URL, { waitUntil: 'domcontentloaded' });
+  test('RC-2: install tab shows one-time onboarding UI with login CTA', async ({
+    extensionContext,
+  }) => {
+    const page = await waitForInstallTab(extensionContext);
 
     // Wait for the extension's shadow-DOM host to appear (content script injected).
     // Discriminator: custom element tag (contains '-') + inline opacity transition.
