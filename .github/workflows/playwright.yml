@@ -19,6 +19,10 @@ on:
         description: 'INF-280 — onMessageExternal Listener'
         type: boolean
         default: true
+      extension_tag:
+        description: 'Release tag to test (leave blank for latest)'
+        type: string
+        default: ''
 
 env:
   EXTENSION_PATH: ${{ github.workspace }}/extension-build
@@ -45,7 +49,7 @@ jobs:
       - name: Download extension build
         run: |
           mkdir -p "$EXTENSION_PATH"
-          gh release download "$EXTENSION_TAG" \
+          gh release download ${EXTENSION_TAG:+"$EXTENSION_TAG"} \
             --repo "$EXTENSION_REPO" \
             --pattern "*chrome-development*.zip" \
             --dir /tmp/ext-download
@@ -53,7 +57,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           EXTENSION_REPO: ${{ secrets.EXTENSION_REPO }}
-          EXTENSION_TAG: ${{ secrets.EXTENSION_TAG }}
+          EXTENSION_TAG: ${{ inputs.extension_tag }}
 
       - name: Run INF-291 tests
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" npx playwright test INF-291/ --reporter=list,html
@@ -90,7 +94,7 @@ jobs:
       - name: Download extension build
         run: |
           mkdir -p "$EXTENSION_PATH"
-          gh release download "$EXTENSION_TAG" \
+          gh release download ${EXTENSION_TAG:+"$EXTENSION_TAG"} \
             --repo "$EXTENSION_REPO" \
             --pattern "*chrome-development*.zip" \
             --dir /tmp/ext-download
@@ -98,7 +102,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           EXTENSION_REPO: ${{ secrets.EXTENSION_REPO }}
-          EXTENSION_TAG: ${{ secrets.EXTENSION_TAG }}
+          EXTENSION_TAG: ${{ inputs.extension_tag }}
 
       - name: Run INF-293 tests
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" npx playwright test INF-293/ --reporter=list,html
@@ -135,7 +139,7 @@ jobs:
       - name: Download extension build
         run: |
           mkdir -p "$EXTENSION_PATH"
-          gh release download "$EXTENSION_TAG" \
+          gh release download ${EXTENSION_TAG:+"$EXTENSION_TAG"} \
             --repo "$EXTENSION_REPO" \
             --pattern "*chrome-development*.zip" \
             --dir /tmp/ext-download
@@ -143,7 +147,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           EXTENSION_REPO: ${{ secrets.EXTENSION_REPO }}
-          EXTENSION_TAG: ${{ secrets.EXTENSION_TAG }}
+          EXTENSION_TAG: ${{ inputs.extension_tag }}
 
       - name: Run INF-280 tests
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x960x24" npx playwright test INF-280/ --reporter=list,html
