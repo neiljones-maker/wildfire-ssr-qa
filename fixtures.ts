@@ -55,6 +55,9 @@ export const test = base.extend<{ extensionContext: BrowserContext }>({
         `--load-extension=${EXTENSION_PATH}`,
         '--no-sandbox',
       ],
+      recordVideo: process.env.RECORD_VIDEO
+        ? { dir: path.resolve(__dirname, 'INF-362/videos') }
+        : undefined,
     });
 
     await waitForExtensionServiceWorker(context);

@@ -15,6 +15,9 @@ INF-293/playwright-report/
 INF-280/playwright-report/
 INF-*/test-results/
 
+# Video recordings are committed intentionally — do not ignore
+!INF-*/videos/
+
 # RC report folders (one per RC version)
 RC.*/playwright-report/
 RC.*/test-results/
