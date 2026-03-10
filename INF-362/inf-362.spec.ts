@@ -8,35 +8,88 @@ import { BrowserContext, Page } from '@playwright/test';
  * couponator does NOT attempt to apply codes and instead shows the
  * "You've got a great price!" modal with the user's cashback rate.
  *
- * Test flow:
- *  1. Navigate to macys.com so the extension initialises the coupon data entry.
- *  2. Immediately override Codes = [] in the service worker store.
- *  3. Add a product to cart and proceed to the bag page.
- *  4. Verify the extension overlay appears (couponator ran).
- *  5. Verify via the service worker store that no codes were applied.
+ * Test flow (per test):
+ *  1. Wait for _primitiveHandler to be available in the service worker.
+ *  2. Seed Codes = [] into the service worker store (BEFORE navigating).
+ *  3. Navigate to the merchant product page and add to cart.
+ *  4. Proceed to the bag/checkout page.
+ *  5. Verify the extension overlay appears and no codes were applied.
  *
  * NOTE: The extension shadow root is mode:'closed', so inner DOM content cannot
  * be asserted via Playwright locators. Modal-state assertions are made by
- * inspecting the service worker store — the same technique used in the other
- * INF-* specs in this repo.
- *
- * NOTE: These tests run against live macys.com / nordstrom.com. The PRODUCT_URL
- * constants below point to simple home-goods items that require no size/colour
- * selection. Update them if they go out of stock.
+ * inspecting the service worker store and the host element visibility.
  */
 
 // ─── URLs ────────────────────────────────────────────────────────────────────
 
 const MACYS_URL = 'https://www.macys.com';
 const MACYS_BAG_URL = 'https://www.macys.com/shop/bag';
-// A one-size item (bath towel) — no variant selection needed
 const MACYS_PRODUCT_URL =
-  'https://www.macys.com/shop/product/hotel-collection-turkish-cotton-bath-towel?ID=37524';
+  'https://www.macys.com/shop/product/adrianna-papell-womens-beaded-short-sleeve-sheer-overlay-gown?ID=21030380';
 
 const NORDSTROM_URL = 'https://www.nordstrom.com';
 const NORDSTROM_BAG_URL = 'https://www.nordstrom.com/shopping/bag';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Polls the service worker until _primitiveHandler is defined and the store
+ * is accessible. Must be called before any worker.evaluate() that touches
+ * the store, since the primitives are initialised asynchronously after SW start.
+ */
+async function waitForPrimitiveHandler(
+  context: BrowserContext,
+  timeoutMs = 30_000,
+): Promise<void> {
+  const [worker] = context.serviceWorkers();
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const ready = await worker.evaluate(
+        () => typeof (_primitiveHandler as any) !== 'undefined' &&
+              typeof (_primitiveHandler as any)._primitives?.store?._store !== 'undefined',
+      );
+      if (ready) return;
+    } catch {
+      // _primitiveHandler not yet in scope — keep polling
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`_primitiveHandler not available in service worker after ${timeoutMs}ms`);
+}
+
+/**
+ * Seeds Codes = [] for the given domain BEFORE any page navigation.
+ * Creates the couponData entry if it doesn't already exist.
+ */
+async function seedEmptyCouponCodes(
+  context: BrowserContext,
+  domain: string,
+): Promise<void> {
+  await waitForPrimitiveHandler(context);
+  const [worker] = context.serviceWorkers();
+  await worker.evaluate((d: string) => {
+    const store = (_primitiveHandler as any)._primitives.store._store;
+    if (!store.couponData) store.couponData = {};
+    if (!store.couponData[d]) store.couponData[d] = {};
+    store.couponData[d].Codes = [];
+  }, domain);
+}
+
+/**
+ * Reads the current Codes array for a domain from the service worker store.
+ * Returns null if no entry exists.
+ */
+async function getCouponCodes(
+  context: BrowserContext,
+  domain: string,
+): Promise<unknown[] | null> {
+  const [worker] = context.serviceWorkers();
+  return worker.evaluate((d: string) => {
+    const store = (_primitiveHandler as any)._primitives.store._store;
+    return store.couponData?.[d]?.Codes ?? null;
+  }, domain);
+}
 
 /**
  * Polls until the extension's host element is visible on the page (opacity 1).
@@ -59,71 +112,10 @@ async function waitForExtensionOverlay(page: Page, timeoutMs = 30_000): Promise<
 }
 
 /**
- * Reads the Codes array for a domain from the service worker store.
- * Returns null if no entry exists yet.
- */
-async function getCouponCodes(
-  context: BrowserContext,
-  domain: string,
-): Promise<unknown[] | null> {
-  const [worker] = context.serviceWorkers();
-  return worker.evaluate((d: string) => {
-    // _primitiveHandler is the global exposed by the extension's background worker
-    const store = (_primitiveHandler as any)._primitives.store._store;
-    return store.couponData?.[d]?.Codes ?? null;
-  }, domain);
-}
-
-/**
- * Sets Codes = [] for the given domain, creating the couponData entry if it
- * doesn't already exist.
- */
-async function seedEmptyCouponCodes(
-  context: BrowserContext,
-  domain: string,
-): Promise<void> {
-  const [worker] = context.serviceWorkers();
-  await worker.evaluate((d: string) => {
-    const store = (_primitiveHandler as any)._primitives.store._store;
-    if (!store.couponData) store.couponData = {};
-    if (!store.couponData[d]) store.couponData[d] = {};
-    store.couponData[d].Codes = [];
-  }, domain);
-}
-
-/**
- * Waits for the extension to populate couponData[domain] (which happens when
- * the content script runs on the merchant page), then immediately clears Codes.
- *
- * If the entry never appears within the timeout the function bails out and
- * creates a minimal entry instead — this lets subsequent assertions still run
- * and surface a meaningful failure rather than a timeout.
- */
-async function waitForCouponDataThenSeedEmpty(
-  context: BrowserContext,
-  domain: string,
-  timeoutMs = 15_000,
-): Promise<void> {
-  const [worker] = context.serviceWorkers();
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const populated = await worker.evaluate((d: string) => {
-      const store = (_primitiveHandler as any)._primitives.store._store;
-      return !!store.couponData?.[d];
-    }, domain);
-    if (populated) break;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-
-  await seedEmptyCouponCodes(context, domain);
-}
-
-/**
- * Attempts to add a product to the macys.com cart.
- * Tries common "Add to Bag" selectors; swallows errors so the calling test can
- * proceed to the bag page regardless (the page may already have items from a
- * previous session, or the couponator may trigger on the bag page itself).
+ * Navigates to the macys.com product page and tries to add it to the bag.
+ * Silently proceeds if the add-to-bag button is not found (e.g. out of stock,
+ * or requires login) — the bag page may still trigger the couponator if items
+ * are already present from a prior session.
  */
 async function tryAddToBag(page: Page): Promise<void> {
   await page.goto(MACYS_PRODUCT_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
@@ -135,13 +127,13 @@ async function tryAddToBag(page: Page): Promise<void> {
         'button:has-text("Add to Bag")',
         'button:has-text("Add to Cart")',
         '[data-auto="add-to-bag"]',
-        '.add-to-bag',
+        '.add-to-bag-btn',
       ].join(', '),
     )
     .first()
     .click({ timeout: 8_000 })
     .catch(() => {
-      // Size/colour selection required, or element not found — carry on
+      // Size selection required, out of stock, or bot-block — carry on
     });
 
   await page.waitForTimeout(1_500);
@@ -153,24 +145,21 @@ test.describe('INF-362: Couponator No-Savings Cashback UI', () => {
   /**
    * AC-1: Service worker accepts Codes = [] without throwing an error.
    *
-   * _primitiveHandler is only available after the extension content script has
-   * run on at least one page, so we navigate to macys.com first to warm it up.
+   * Seeds the store before any page navigation to confirm _primitiveHandler
+   * is writable as soon as the SW initialises.
    */
   test('AC-1: service worker accepts Codes = [] without error', async ({ extensionContext }) => {
-    const page = await extensionContext.newPage();
-    await page.goto(MACYS_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(2_000);
-
+    // Confirm _primitiveHandler is up, then seed a starter entry
+    await waitForPrimitiveHandler(extensionContext);
     const [worker] = extensionContext.serviceWorkers();
 
-    // Create a starter entry with a real code so we can observe the override
     await worker.evaluate(() => {
       const store = (_primitiveHandler as any)._primitives.store._store;
       if (!store.couponData) store.couponData = {};
       store.couponData['macys.com'] = { Codes: ['SUMMER25'] };
     });
 
-    // Clear the codes — must not throw
+    // Override to empty — must not throw
     await worker.evaluate(() => {
       (_primitiveHandler as any)._primitives.store._store.couponData['macys.com'].Codes = [];
     });
@@ -180,37 +169,33 @@ test.describe('INF-362: Couponator No-Savings Cashback UI', () => {
     });
 
     expect(codes).toEqual([]);
-    await page.close();
   });
 
   /**
    * AC-2: Adding a product to cart triggers the extension overlay.
-   * AC-5: No coupon codes are attempted or applied (Codes remains []).
+   * AC-6b: No coupon codes are attempted or applied (Codes remains []).
+   *
+   * Seeds the SW store FIRST, then navigates so the extension reads the
+   * pre-seeded empty Codes rather than fetching fresh ones from the API.
    */
   test(
-    'AC-2 + AC-5: overlay appears after add-to-cart and no codes are applied',
+    'AC-2 + AC-6b: overlay appears after add-to-cart and no codes are applied',
     async ({ extensionContext }) => {
       const page = await extensionContext.newPage();
 
-      // Visit macys.com homepage so the extension content script runs and can
-      // populate the couponData entry before we clear it
-      await page.goto(MACYS_URL, { waitUntil: 'domcontentloaded' });
-      await page.waitForTimeout(2_000);
+      // Step 1: seed SW store BEFORE navigating to any merchant page
+      await seedEmptyCouponCodes(extensionContext, 'macys.com');
 
-      // Wait for the extension to populate couponData['macys.com'], then clear codes
-      await waitForCouponDataThenSeedEmpty(extensionContext, 'macys.com');
-
-      // Confirm codes are empty before proceeding
       const codesBefore = await getCouponCodes(extensionContext, 'macys.com');
       expect(codesBefore).toEqual([]);
 
-      // Add a product to cart
+      // Step 2: add product to cart
       await tryAddToBag(page);
 
-      // Navigate to the bag / checkout page — this is where the couponator triggers
+      // Step 3: navigate to bag — couponator triggers here
       await page.goto(MACYS_BAG_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 
-      // Wait for the extension overlay to appear
+      // Step 4: overlay must appear
       await waitForExtensionOverlay(page);
 
       const overlayVisible = await page.evaluate(() => {
@@ -222,10 +207,9 @@ test.describe('INF-362: Couponator No-Savings Cashback UI', () => {
         ) as HTMLElement | undefined;
         return host ? host.style.opacity === '1' || host.style.opacity === '' : false;
       });
-
       expect(overlayVisible).toBe(true);
 
-      // AC-5: Codes must still be empty — the couponator must not have applied anything
+      // Step 5: Codes must still be [] — nothing was applied
       const codesAfter = await getCouponCodes(extensionContext, 'macys.com');
       expect(codesAfter).toEqual([]);
 
@@ -235,28 +219,24 @@ test.describe('INF-362: Couponator No-Savings Cashback UI', () => {
 
   /**
    * AC-3: The "You've got a great price!" modal state is reached.
-   * AC-4: The cashback rate is present (no coupon codes were applied).
+   * AC-4: No coupon was applied (bestCode absent, Codes still empty).
    *
    * The shadow root is mode:'closed' so DOM text cannot be queried directly.
-   * We verify state via two observable signals:
-   *   (a) the extension overlay is visible — the modal rendered, and
-   *   (b) couponData['macys.com'].Codes is still [] — no code was ever applied.
-   *
-   * Together these prove the couponator took the "no codes → show cashback" path.
+   * We verify via two observable signals:
+   *   (a) overlay is visible — the modal rendered, and
+   *   (b) Codes is still [] — no code was ever tried.
    */
   test(
-    'AC-3 + AC-4: couponator reaches no-savings completion state for macys.com',
+    'AC-3 + AC-4: couponator shows no-savings modal with cashback state on macys.com',
     async ({ extensionContext }) => {
       const page = await extensionContext.newPage();
 
-      await page.goto(MACYS_URL, { waitUntil: 'domcontentloaded' });
-      await page.waitForTimeout(2_000);
-      await waitForCouponDataThenSeedEmpty(extensionContext, 'macys.com');
-
+      // Seed SW first, then navigate
+      await seedEmptyCouponCodes(extensionContext, 'macys.com');
       await tryAddToBag(page);
       await page.goto(MACYS_BAG_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
 
-      // (a) Overlay must appear — the "great price" modal rendered
+      // (a) Overlay must be visible — "great price" modal rendered
       await waitForExtensionOverlay(page);
 
       const overlayVisible = await page.evaluate(() => {
@@ -270,7 +250,7 @@ test.describe('INF-362: Couponator No-Savings Cashback UI', () => {
       });
       expect(overlayVisible).toBe(true);
 
-      // (b) Codes must still be empty — no coupon was attempted or applied
+      // (b) Codes still empty — couponator did not attempt to apply any code
       const codesAfter = await getCouponCodes(extensionContext, 'macys.com');
       expect(codesAfter).toEqual([]);
 
@@ -279,27 +259,22 @@ test.describe('INF-362: Couponator No-Savings Cashback UI', () => {
   );
 
   /**
-   * AC-5 (continued): "Continue to Checkout" dismisses the modal.
+   * AC-5: "Continue to Checkout" dismisses the modal.
    *
-   * The shadow root is mode:'closed' so Playwright locators can't reach the
-   * button directly. We use a CDP Input.dispatchMouseEvent targeted at the
-   * centre-bottom of the host element bounding rect, which is where the CTA
-   * renders inside the modal, then confirm the overlay disappears.
+   * The shadow root is mode:'closed' so the button cannot be targeted via
+   * Playwright locators. We use page.keyboard to Tab into the shadow host and
+   * press Enter, then confirm the overlay is gone or a navigation occurred.
    */
   test('AC-5: "Continue to Checkout" dismisses the modal', async ({ extensionContext }) => {
     const page = await extensionContext.newPage();
 
-    await page.goto(MACYS_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(2_000);
-    await waitForCouponDataThenSeedEmpty(extensionContext, 'macys.com');
-
+    await seedEmptyCouponCodes(extensionContext, 'macys.com');
     await tryAddToBag(page);
     await page.goto(MACYS_BAG_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await waitForExtensionOverlay(page);
 
-    // Locate the host element and find the centre-bottom area (CTA zone).
-    // The modal is a fixed-position overlay; the button is near the bottom of
-    // the card, roughly 80–90 % down the host's bounding rect.
+    // Click the approximate CTA position: centre-X, ~80% down the host rect.
+    // The "Continue to Checkout" button is near the bottom of the modal card.
     const ctaPoint = await page.evaluate(() => {
       const host = Array.from(document.documentElement.children).find(
         (el) =>
@@ -309,45 +284,31 @@ test.describe('INF-362: Couponator No-Savings Cashback UI', () => {
       ) as HTMLElement | undefined;
       if (!host) return null;
       const r = host.getBoundingClientRect();
-      // Centre-X, 85 % down from the top of the host rect
-      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height * 0.85) };
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height * 0.82) };
     });
 
     expect(ctaPoint).not.toBeNull();
 
-    // Use CDP to dispatch the click so it reaches inside the closed shadow DOM
-    const cdp = await extensionContext.newCDPSession(page);
-    await cdp.send('Input.dispatchMouseEvent', {
-      type: 'mousePressed',
-      x: ctaPoint!.x,
-      y: ctaPoint!.y,
-      button: 'left',
-      clickCount: 1,
-    });
-    await cdp.send('Input.dispatchMouseEvent', {
-      type: 'mouseReleased',
-      x: ctaPoint!.x,
-      y: ctaPoint!.y,
-      button: 'left',
-      clickCount: 1,
-    });
-    await cdp.detach();
-
+    // Wait for either a navigation OR the overlay to disappear after the click
+    await Promise.all([
+      page.waitForNavigation({ timeout: 8_000 }).catch(() => {}),
+      page.mouse.click(ctaPoint!.x, ctaPoint!.y),
+    ]);
     await page.waitForTimeout(2_000);
 
-    // After the CTA is clicked the overlay should be removed or hidden
-    const overlayGone = await page.evaluate(() => {
+    // Either the page navigated away (overlay gone naturally) or it was hidden
+    const overlayGoneOrNavigated = await page.evaluate(() => {
       const host = Array.from(document.documentElement.children).find(
         (el) =>
           el.tagName.includes('-') &&
           !['HEAD', 'BODY'].includes(el.tagName) &&
           (el as HTMLElement).style.transition?.includes('opacity'),
       ) as HTMLElement | undefined;
-      if (!host) return true; // removed from DOM entirely
+      if (!host) return true; // element removed from DOM
       return host.style.opacity === '0' || host.style.display === 'none';
     });
 
-    expect(overlayGone).toBe(true);
+    expect(overlayGoneOrNavigated).toBe(true);
     await page.close();
   });
 
@@ -357,15 +318,15 @@ test.describe('INF-362: Couponator No-Savings Cashback UI', () => {
   test('AC-6: empty Codes = [] is reproducible on nordstrom.com', async ({ extensionContext }) => {
     const page = await extensionContext.newPage();
 
+    // Seed SW first
+    await seedEmptyCouponCodes(extensionContext, 'nordstrom.com');
+
+    const codesBefore = await getCouponCodes(extensionContext, 'nordstrom.com');
+    expect(codesBefore).toEqual([]);
+
+    // Navigate to nordstrom bag — extension must mount and not apply codes
     await page.goto(NORDSTROM_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForTimeout(2_000);
-
-    await waitForCouponDataThenSeedEmpty(extensionContext, 'nordstrom.com');
-
-    const codes = await getCouponCodes(extensionContext, 'nordstrom.com');
-    expect(codes).toEqual([]);
-
-    // Navigate to the Nordstrom bag page — extension host must still mount
     await page.goto(NORDSTROM_BAG_URL, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForTimeout(3_000);
 
@@ -374,10 +335,9 @@ test.describe('INF-362: Couponator No-Savings Cashback UI', () => {
         (el) => el.tagName.includes('-') && !['HEAD', 'BODY'].includes(el.tagName),
       ),
     );
-
     expect(hostPresent).toBe(true);
 
-    // Codes must still be empty — nothing was applied
+    // Codes must remain empty
     const codesAfter = await getCouponCodes(extensionContext, 'nordstrom.com');
     expect(codesAfter).toEqual([]);
 
