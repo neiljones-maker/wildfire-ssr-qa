@@ -13,7 +13,13 @@ package-lock.json
 INF-291/playwright-report/
 INF-293/playwright-report/
 INF-280/playwright-report/
+INF-346/playwright-report/
 INF-*/test-results/
+
+# Competing extension directories (never commit extension files)
+competing-extensions/honey/
+competing-extensions/capital-one/
+competing-extensions/rakuten/
 
 # RC report folders (one per RC version)
 RC.*/playwright-report/

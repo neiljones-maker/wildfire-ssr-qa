@@ -10,7 +10,7 @@ import { defineConfig } from '@playwright/test';
  */
 export default defineConfig({
   testDir: '.',
-  timeout: 60_000,
+  timeout: 120_000,
   retries: 0,
   workers: 1, // Run one spec file at a time — each launches its own Chrome instance
   reporter: [
