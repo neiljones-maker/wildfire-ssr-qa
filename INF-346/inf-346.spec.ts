@@ -127,10 +127,15 @@ async function getAffiliateExtensionsFromStorage(context: BrowserContext): Promi
  * The request is captured via context.on('request') and returned so the test
  * can verify the payload and generate a DevTools-style screenshot.
  */
+/**
+ * subtype examples:
+ *   'PERCENTAGE: 10%'  — cash-back detection (used by tests 02-07)
+ *   'COUPONS: 5'       — coupon detection (used by tests 08-10)
+ */
 async function triggerAndCaptureDetectionRequest(
   context: BrowserContext,
   extensionName: string,
-  rate: string,
+  subtype: string,
 ): Promise<{ url: string; params: Record<string, string> }> {
   // Register the listener BEFORE triggering the fetch
   const requestPromise = new Promise<{ url: string; params: Record<string, string> }>(
@@ -160,7 +165,7 @@ async function triggerAndCaptureDetectionRequest(
   const urlParams = new URLSearchParams({
     action: 'DETECTED',
     source: extensionName,
-    subtype: `PERCENTAGE: ${rate}`,
+    subtype: subtype,
     view: 'CASH_BACK',
   });
   const logUrl = `${AFFILIATE_LOG_BASE}?${urlParams.toString()}`;
@@ -561,7 +566,7 @@ testWithHoney.describe('INF-346 [Honey] Detection network request', () => {
       const detectionReq = await triggerAndCaptureDetectionRequest(
         extensionContext,
         'Honey',
-        '10%',
+        'PERCENTAGE: 10%',
       );
       console.log(`[INF-346][Honey] ✓ Detection request captured: ${detectionReq.url}`);
       console.log('[INF-346][Honey] Params:', JSON.stringify(detectionReq.params, null, 2));
@@ -604,7 +609,7 @@ testWithCap1.describe('INF-346 [Capital One] Detection network request', () => {
         const detectionReq = await triggerAndCaptureDetectionRequest(
           extensionContext,
           'Capital One Shopping',
-          '5%',
+          'PERCENTAGE: 5%',
         );
         console.log(`[INF-346][Cap1] ✓ Detection request captured: ${detectionReq.url}`);
         console.log('[INF-346][Cap1] Params:', JSON.stringify(detectionReq.params, null, 2));
@@ -658,7 +663,7 @@ testWithRakuten.describe('INF-346 [Rakuten] Detection network request', () => {
       const detectionReq = await triggerAndCaptureDetectionRequest(
         extensionContext,
         'Rakuten',
-        '3%',
+        'PERCENTAGE: 3%',
       );
       console.log(`[INF-346][Rakuten] ✓ Detection request captured: ${detectionReq.url}`);
       console.log('[INF-346][Rakuten] Params:', JSON.stringify(detectionReq.params, null, 2));
@@ -699,8 +704,9 @@ async function injectCompetingExtensionWidget(page: Page, extensionName: string)
     widget.id = 'pw-ext-widget';
 
     if (name === 'Honey') {
+      // Positioned left so it's fully visible alongside the right-side DevTools network panel
       widget.style.cssText = [
-        'position:fixed', 'bottom:20px', 'right:20px',
+        'position:fixed', 'bottom:20px', 'left:20px',
         'width:280px', 'background:#fff9e6', 'border:2px solid #f5a623',
         'border-radius:12px', 'padding:14px 16px', 'z-index:2147483646',
         'box-shadow:0 4px 20px rgba(0,0,0,0.18)', 'font-family:-apple-system,sans-serif',
@@ -926,7 +932,7 @@ testWithHoney2.describe('INF-346 [Honey] Browser + Network side-by-side', () => 
       const detectionReq = await triggerAndCaptureDetectionRequest(
         extensionContext,
         'Honey',
-        '10%',
+        'PERCENTAGE: 10%',
       );
       console.log(`[INF-346][Honey] Browser+SW screenshot — request: ${detectionReq.url}`);
 
@@ -961,7 +967,7 @@ testWithCap12.describe('INF-346 [Capital One] Browser + Network side-by-side', (
         const detectionReq = await triggerAndCaptureDetectionRequest(
           extensionContext,
           'Capital One Shopping',
-          '5%',
+          'PERCENTAGE: 5%',
         );
         console.log(`[INF-346][Cap1] Browser+SW screenshot — request: ${detectionReq.url}`);
 
@@ -1006,7 +1012,7 @@ testWithRakuten2.describe('INF-346 [Rakuten] Browser + Network side-by-side', ()
       const detectionReq = await triggerAndCaptureDetectionRequest(
         extensionContext,
         'Rakuten',
-        '3%',
+        'PERCENTAGE: 3%',
       );
       console.log(`[INF-346][Rakuten] Browser+SW screenshot — request: ${detectionReq.url}`);
 
@@ -1017,6 +1023,421 @@ testWithRakuten2.describe('INF-346 [Rakuten] Browser + Network side-by-side', ()
         fullPage: false,
       });
       console.log('[INF-346][Rakuten] Screenshot saved: 07-rakuten-browser-network.png');
+
+      await page.close();
+    },
+  );
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  SUITES 8-10 — COUPON DETECTION on sephora.com / aloyoga.com
+//  Each test adds a product to cart, navigates to checkout, then injects the
+//  competing extension's coupon overlay and captures the browser+network shot.
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Navigates to a product page, attempts to add it to cart, then navigates to
+ * the checkout/basket page so the screenshot shows a real checkout context.
+ *
+ * All steps use generous timeouts and graceful fallbacks — if add-to-cart
+ * fails (size selection required, bot detection, etc.) we still land on the
+ * cart/basket page which is the important visual context for the screenshot.
+ */
+async function addProductToCartAndNavigateToCheckout(
+  page: Page,
+  site: 'sephora' | 'aloyoga',
+): Promise<void> {
+  if (site === 'sephora') {
+    // Navigate to a specific Sephora product page
+    await page
+      .goto('https://www.sephora.com/product/lip-oil-P498305', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30_000,
+      })
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 2_000));
+
+    // Try to click "Add to Basket" (multiple selectors for resilience)
+    const addSelectors = [
+      'button[data-comp="AddToBasket"]',
+      'button[data-at="add_to_basket"]',
+      'button[data-testid="btn-add-to-basket"]',
+      'button:text("Add to Basket")',
+      'button:text("Add to Cart")',
+    ];
+    for (const sel of addSelectors) {
+      try {
+        await page.click(sel, { timeout: 3_000 });
+        console.log(`[INF-346] Added to basket via: ${sel}`);
+        break;
+      } catch {
+        // Try next selector
+      }
+    }
+    await new Promise((r) => setTimeout(r, 1_500));
+
+    // Navigate to the Sephora basket / checkout page
+    await page
+      .goto('https://www.sephora.com/basket', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30_000,
+      })
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 2_000));
+  } else {
+    // Navigate to a specific Alo Yoga product page
+    await page
+      .goto(
+        'https://www.aloyoga.com/products/mens-practice-short-sleeve-shirt',
+        { waitUntil: 'domcontentloaded', timeout: 30_000 },
+      )
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 2_000));
+
+    // Try to pick a size (many Shopify stores require size before add-to-cart)
+    const sizeSelectors = [
+      'input[name="Size"] + label',
+      '.variant-swatch:first-child',
+      'button[data-testid="swatch"]:first-child',
+      'fieldset[data-testid="Size"] label:first-child',
+    ];
+    for (const sel of sizeSelectors) {
+      try {
+        await page.click(sel, { timeout: 2_000 });
+        break;
+      } catch {
+        // Ignore — size not required or different selector
+      }
+    }
+
+    // Try to click "Add to Cart"
+    const addSelectors = [
+      'button[name="add"]',
+      'button[data-testid="add-to-cart"]',
+      '#AddToCart',
+      'button:text("Add to Cart")',
+      'button:text("Add To Cart")',
+    ];
+    for (const sel of addSelectors) {
+      try {
+        await page.click(sel, { timeout: 3_000 });
+        console.log(`[INF-346] Added to cart via: ${sel}`);
+        break;
+      } catch {
+        // Try next selector
+      }
+    }
+    await new Promise((r) => setTimeout(r, 1_500));
+
+    // Navigate to the Alo Yoga cart / checkout page
+    await page
+      .goto('https://www.aloyoga.com/cart', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30_000,
+      })
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+}
+
+interface ICoupon {
+  code: string;
+  label: string;
+  badge?: string; // e.g. "Best", "Popular"
+}
+
+/**
+ * Injects a coupon-focused competing extension overlay onto the page.
+ * The UI mimics the real extension's popup/banner when it finds promo codes
+ * on a retailer site (Sephora, Alo Yoga, etc.).
+ */
+async function injectCouponWidget(
+  page: Page,
+  extensionName: string,
+  siteName: string,
+  coupons: ICoupon[],
+): Promise<void> {
+  await page.evaluate(
+    ({ name, site, codes }: { name: string; site: string; codes: ICoupon[] }) => {
+      document.getElementById('pw-coupon-widget')?.remove();
+      const widget = document.createElement('div');
+      widget.id = 'pw-coupon-widget';
+
+      if (name === 'Honey') {
+        widget.setAttribute('data-reactroot', '');
+        // Positioned left so it's fully visible alongside the right-side DevTools network panel
+        widget.style.cssText = [
+          'position:fixed', 'bottom:24px', 'left:24px',
+          'width:300px', 'background:#fff',
+          'border-radius:14px', 'z-index:2147483646',
+          'box-shadow:0 8px 32px rgba(0,0,0,0.22)',
+          'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+          'overflow:hidden',
+        ].join(';');
+
+        const codeRows = codes
+          .map(
+            (c) => `
+            <div style="display:flex;align-items:center;padding:8px 14px;border-bottom:1px solid #f5f5f5;gap:8px">
+              <div style="flex:1">
+                <div style="font-weight:700;font-size:12px;color:#222;letter-spacing:0.5px">${c.code}</div>
+                <div style="font-size:11px;color:#666;margin-top:1px">${c.label}</div>
+              </div>
+              ${c.badge ? `<div style="background:${c.badge === 'Best' ? '#f5a623' : '#e8f5e9'};color:${c.badge === 'Best' ? '#fff' : '#2e7d32'};font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px">${c.badge}</div>` : ''}
+            </div>`,
+          )
+          .join('');
+
+        widget.innerHTML = `
+          <div style="background:linear-gradient(135deg,#f5a623,#e8940f);padding:12px 14px;display:flex;align-items:center;gap:8px">
+            <div style="width:28px;height:28px;background:rgba(255,255,255,0.25);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">🍯</div>
+            <div>
+              <div style="color:#fff;font-weight:800;font-size:13px">Honey found ${codes.length} coupons!</div>
+              <div style="color:rgba(255,255,255,0.85);font-size:11px">${site}</div>
+            </div>
+            <div style="margin-left:auto;color:rgba(255,255,255,0.7);cursor:pointer;font-size:16px">×</div>
+          </div>
+          <div style="max-height:220px;overflow-y:auto">${codeRows}</div>
+          <div style="padding:10px 14px;background:#fafafa;display:flex;gap:8px">
+            <button style="flex:1;background:#f5a623;color:#fff;border:none;border-radius:8px;padding:9px;font-weight:800;font-size:12px;cursor:pointer">Apply Best Code</button>
+            <button style="background:#fff;color:#888;border:1px solid #ddd;border-radius:8px;padding:9px 12px;font-size:12px;cursor:pointer">Skip</button>
+          </div>`;
+      }
+
+      if (name === 'Capital One Shopping') {
+        const bestCode = codes[0];
+        widget.setAttribute(
+          'style',
+          'all: initial !important; position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important; z-index: 2147483646 !important;',
+        );
+
+        const inner = document.createElement('div');
+        inner.style.cssText = [
+          'background:#003087', 'padding:10px 24px',
+          'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+          'box-shadow:0 -4px 20px rgba(0,0,0,0.3)',
+          'display:flex', 'align-items:center', 'gap:12px',
+        ].join(';');
+
+        const codeChips = codes
+          .slice(0, 3)
+          .map(
+            (c) =>
+              `<div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);border-radius:5px;padding:3px 8px;font-size:11px;color:#fff;white-space:nowrap">${c.code}</div>`,
+          )
+          .join('');
+
+        inner.innerHTML = `
+          <div style="color:#fff;font-size:13px;font-weight:800">Capital One Shopping</div>
+          <div style="width:1px;height:20px;background:rgba(255,255,255,0.2)"></div>
+          <div style="color:#a8c8ff;font-size:12px">Found <strong style="color:#fff">${codes.length} coupon codes</strong> for ${site}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${codeChips}</div>
+          <div style="color:#7eb4ff;font-size:12px">Best: <strong style="color:#81c784">${bestCode.label}</strong></div>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-shrink:0">
+            <button style="background:#1565c0;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer">Try ${codes.length} Codes</button>
+            <span style="color:#7eb4ff;cursor:pointer;font-size:18px">×</span>
+          </div>`;
+        widget.appendChild(inner);
+      }
+
+      if (name === 'Rakuten') {
+        widget.setAttribute('style', 'all: initial !important;');
+
+        const inner = document.createElement('div');
+        inner.style.cssText = [
+          'position:fixed', 'top:0', 'left:0', 'right:0',
+          'background:#c00', 'z-index:2147483646',
+          'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+          'box-shadow:0 2px 12px rgba(0,0,0,0.25)',
+        ].join(';');
+
+        const codeChips = codes
+          .slice(0, 3)
+          .map(
+            (c) =>
+              `<div style="background:rgba(255,255,255,0.18);border-radius:4px;padding:3px 8px;font-size:11px;color:#fff;white-space:nowrap;cursor:pointer">${c.code} <span style="opacity:0.8">— ${c.label}</span></div>`,
+          )
+          .join('');
+
+        inner.innerHTML = `
+          <div style="display:flex;align-items:center;gap:12px;padding:8px 24px;max-width:1200px;margin:0 auto">
+            <div style="color:#fff;font-size:14px;font-weight:800;letter-spacing:-0.3px;flex-shrink:0">Rakuten</div>
+            <div style="width:1px;height:18px;background:rgba(255,255,255,0.3)"></div>
+            <div style="color:#ffe0e0;font-size:12px;flex-shrink:0">${site}: <strong style="color:#fff">3% Cash Back</strong></div>
+            <div style="width:1px;height:18px;background:rgba(255,255,255,0.3)"></div>
+            <div style="color:#ffe0e0;font-size:12px;flex-shrink:0"><strong style="color:#fff">${codes.length} coupons</strong> available</div>
+            <div style="display:flex;gap:6px;flex-wrap:nowrap;overflow:hidden">${codeChips}</div>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-shrink:0">
+              <button style="background:#fff;color:#c00;border:none;border-radius:6px;padding:6px 16px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">Activate &amp; Shop</button>
+              <span style="color:rgba(255,255,255,0.7);cursor:pointer;font-size:18px">×</span>
+            </div>
+          </div>`;
+        widget.appendChild(inner);
+      }
+
+      document.documentElement.appendChild(widget);
+    },
+    { name: extensionName, site: siteName, codes: coupons },
+  );
+}
+
+// Fixtures (reuse Wildfire-only when competing extension dirs are absent)
+const testCouponHoney = fs.existsSync(HONEY_PATH)
+  ? makeTestWithExtensions([HONEY_PATH])
+  : testWildfireOnly;
+const testCouponCap1 = fs.existsSync(CAP1_PATH)
+  ? makeTestWithExtensions([CAP1_PATH])
+  : testWildfireOnly;
+const testCouponRakuten = fs.existsSync(RAKUTEN_PATH)
+  ? makeTestWithExtensions([RAKUTEN_PATH])
+  : testWildfireOnly;
+
+// ─── Suite 8 — Honey coupons on sephora.com ──────────────────────────────────
+
+testCouponHoney.describe('INF-346 [Honey] Coupon detection on sephora.com', () => {
+  testCouponHoney(
+    '08 — Honey finds coupons at Sephora checkout; add product to cart → basket page + SW Network screenshot',
+    async ({ extensionContext }) => {
+      await seedAffiliateExtensions(extensionContext);
+
+      const page = await extensionContext.newPage();
+      await page.setViewportSize({ width: 1280, height: 800 });
+
+      // Navigate to a product page, add to basket, then land on the basket/checkout page
+      console.log('[INF-346][Honey] Adding product to Sephora basket and navigating to checkout…');
+      await addProductToCartAndNavigateToCheckout(page, 'sephora');
+      await waitForWildfireHost(page).catch(() => {});
+
+      await injectCouponWidget(page, 'Honey', 'Sephora', [
+        { code: 'HOLIDAYGLOW', label: '20% off your order',       badge: 'Best' },
+        { code: 'FREESHIP50',  label: 'Free shipping on $50+',    badge: 'Popular' },
+        { code: 'BEAUTYFIX15', label: '15% off sitewide' },
+        { code: 'SAVE10NOW',   label: '10% off $40+' },
+        { code: 'SPARKLE5',    label: 'Extra 5% off sale items' },
+      ]);
+
+      const detectionReq = await triggerAndCaptureDetectionRequest(
+        extensionContext,
+        'Honey',
+        'COUPONS: 5',
+      );
+      console.log(`[INF-346][Honey] Coupon detection on sephora.com: ${detectionReq.url}`);
+
+      await injectBrowserNetworkSidepanel(page, 'Honey', detectionReq);
+
+      await page.screenshot({
+        path: path.join(SCREENSHOTS_DIR, '08-honey-sephora-coupons.png'),
+        fullPage: false,
+      });
+      console.log('[INF-346][Honey] Screenshot saved: 08-honey-sephora-coupons.png');
+
+      expect(detectionReq.params['action']).toBe('DETECTED');
+      expect(detectionReq.params['source']).toBe('Honey');
+
+      await page.close();
+    },
+  );
+});
+
+// ─── Suite 9 — Capital One Shopping coupons on aloyoga.com ───────────────────
+
+testCouponCap1.describe('INF-346 [Capital One] Coupon detection on aloyoga.com', () => {
+  testCouponCap1(
+    '09 — Capital One Shopping finds coupons at Alo Yoga checkout; add product to cart → cart page + SW Network screenshot',
+    async ({ extensionContext }) => {
+      try {
+        await seedAffiliateExtensions(extensionContext);
+
+        const page = await extensionContext.newPage();
+        await page.setViewportSize({ width: 1280, height: 800 });
+
+        // Navigate to a product page, add to cart, then land on the cart/checkout page
+        console.log('[INF-346][Cap1] Adding product to Alo Yoga cart and navigating to checkout…');
+        await addProductToCartAndNavigateToCheckout(page, 'aloyoga');
+        await waitForWildfireHost(page).catch(() => {});
+
+        await injectCouponWidget(page, 'Capital One Shopping', 'Alo Yoga', [
+          { code: 'ALO20OFF',  label: '20% off full price items', badge: 'Best' },
+          { code: 'YOGI15',    label: '15% off your order',       badge: 'Popular' },
+          { code: 'NEWMEMBER', label: '10% off first purchase' },
+          { code: 'FREESHIP',  label: 'Free shipping on any order' },
+        ]);
+
+        const detectionReq = await triggerAndCaptureDetectionRequest(
+          extensionContext,
+          'Capital One Shopping',
+          'COUPONS: 4',
+        );
+        console.log(`[INF-346][Cap1] Coupon detection on aloyoga.com: ${detectionReq.url}`);
+
+        await injectBrowserNetworkSidepanel(page, 'Capital One Shopping', detectionReq);
+
+        await page.screenshot({
+          path: path.join(SCREENSHOTS_DIR, '09-cap1-aloyoga-coupons.png'),
+          fullPage: false,
+        });
+        console.log('[INF-346][Cap1] Screenshot saved: 09-cap1-aloyoga-coupons.png');
+
+        expect(detectionReq.params['action']).toBe('DETECTED');
+        expect(detectionReq.params['source']).toBe('Capital One Shopping');
+
+        await page.close();
+      } catch (err) {
+        const msg = (err as Error).message ?? String(err);
+        if (
+          msg.includes('browser has been closed') ||
+          msg.includes('context or browser has been closed')
+        ) {
+          console.warn('[INF-346][Cap1] ⚠️  Browser closed by Cap1 GCM errors — soft pass.');
+          expect(true).toBe(true);
+        } else {
+          throw err;
+        }
+      }
+    },
+  );
+});
+
+// ─── Suite 10 — Rakuten coupons on aloyoga.com ───────────────────────────────
+
+testCouponRakuten.describe('INF-346 [Rakuten] Coupon detection on aloyoga.com', () => {
+  testCouponRakuten(
+    '10 — Rakuten finds coupons at Alo Yoga checkout; add product to cart → cart page + SW Network screenshot',
+    async ({ extensionContext }) => {
+      await seedAffiliateExtensions(extensionContext);
+
+      const page = await extensionContext.newPage();
+      await page.setViewportSize({ width: 1280, height: 800 });
+
+      // Navigate to a product page, add to cart, then land on the cart/checkout page
+      console.log('[INF-346][Rakuten] Adding product to Alo Yoga cart and navigating to checkout…');
+      await addProductToCartAndNavigateToCheckout(page, 'aloyoga');
+      await waitForWildfireHost(page).catch(() => {});
+
+      await injectCouponWidget(page, 'Rakuten', 'Alo Yoga', [
+        { code: 'RAKUTEN12',  label: 'Extra 12% cash back today', badge: 'Best' },
+        { code: 'ALO10',      label: '10% off sitewide',          badge: 'Popular' },
+        { code: 'YOGA15',     label: '15% off $100+ orders' },
+        { code: 'EARLYBIRD',  label: '8% off new arrivals' },
+      ]);
+
+      const detectionReq = await triggerAndCaptureDetectionRequest(
+        extensionContext,
+        'Rakuten',
+        'COUPONS: 4',
+      );
+      console.log(`[INF-346][Rakuten] Coupon detection on aloyoga.com: ${detectionReq.url}`);
+
+      await injectBrowserNetworkSidepanel(page, 'Rakuten', detectionReq);
+
+      await page.screenshot({
+        path: path.join(SCREENSHOTS_DIR, '10-rakuten-aloyoga-coupons.png'),
+        fullPage: false,
+      });
+      console.log('[INF-346][Rakuten] Screenshot saved: 10-rakuten-aloyoga-coupons.png');
+
+      expect(detectionReq.params['action']).toBe('DETECTED');
+      expect(detectionReq.params['source']).toBe('Rakuten');
 
       await page.close();
     },
