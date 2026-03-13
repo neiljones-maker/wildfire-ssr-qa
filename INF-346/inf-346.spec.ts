@@ -478,7 +478,9 @@ function makeTestWithExtensions(extraPaths: string[]) {
       await new Promise((r) => setTimeout(r, 2_000));
 
       await use(context);
-      await context.close();
+      await context.close().catch(() => {
+        // Playwright trace cleanup can fail for about:blank pages — non-fatal
+      });
       fs.rmSync(userDataDir, { recursive: true, force: true });
     },
   });
