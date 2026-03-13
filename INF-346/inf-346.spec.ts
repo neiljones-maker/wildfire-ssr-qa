@@ -1050,10 +1050,10 @@ async function addProductToCartAndNavigateToCheckout(
   if (site === 'sephora') {
     // Navigate to a specific Sephora product page
     await page
-      .goto('https://www.sephora.com/product/lip-oil-P498305', {
-        waitUntil: 'domcontentloaded',
-        timeout: 30_000,
-      })
+      .goto(
+        'https://www.sephora.com/product/sweet-pink-duo-with-birthday-cake-strawberry-soft-serve-lip-butter-balm-P520768?skuId=2940500',
+        { waitUntil: 'domcontentloaded', timeout: 30_000 },
+      )
       .catch(() => {});
     await new Promise((r) => setTimeout(r, 2_000));
 
@@ -1085,32 +1085,16 @@ async function addProductToCartAndNavigateToCheckout(
       .catch(() => {});
     await new Promise((r) => setTimeout(r, 2_000));
   } else {
-    // Navigate to a specific Alo Yoga product page
+    // Navigate to a specific Alo Yoga product page (yoga mat spray — no size selection required)
     await page
       .goto(
-        'https://www.aloyoga.com/products/mens-practice-short-sleeve-shirt',
+        'https://www.aloyoga.com/products/n7009f-yoga-mat-spray_8-oz-alo-scent',
         { waitUntil: 'domcontentloaded', timeout: 30_000 },
       )
       .catch(() => {});
     await new Promise((r) => setTimeout(r, 2_000));
 
-    // Try to pick a size (many Shopify stores require size before add-to-cart)
-    const sizeSelectors = [
-      'input[name="Size"] + label',
-      '.variant-swatch:first-child',
-      'button[data-testid="swatch"]:first-child',
-      'fieldset[data-testid="Size"] label:first-child',
-    ];
-    for (const sel of sizeSelectors) {
-      try {
-        await page.click(sel, { timeout: 2_000 });
-        break;
-      } catch {
-        // Ignore — size not required or different selector
-      }
-    }
-
-    // Try to click "Add to Cart"
+    // Try to click "Add to Cart" (yoga mat spray has no size variant)
     const addSelectors = [
       'button[name="add"]',
       'button[data-testid="add-to-cart"]',
